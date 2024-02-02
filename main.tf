@@ -9,16 +9,16 @@ resource "aws_api_gateway_resource" "resource_path_parent" {
 
   parent_id   = aws_api_gateway_rest_api.create_api.root_resource_id
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  path_part   = each.value.name
+  path_part   = each.value.path
 }
 
-resource "aws_api_gateway_resource" "resource_path_wildcard" {
-  for_each = var.apps
-
-  parent_id   = aws_api_gateway_resource.resource_path_parent[each.key].id
-  rest_api_id = aws_api_gateway_rest_api.create_api.id
-  path_part   = "{proxy+}"
-}
+# resource "aws_api_gateway_resource" "resource_path_wildcard" {
+#   for_each = var.apps
+#
+#   parent_id   = aws_api_gateway_resource.resource_path_parent[each.key].id
+#   rest_api_id = aws_api_gateway_rest_api.create_api.id
+#   path_part   = "{proxy+}"
+# }
 
 resource "aws_api_gateway_authorizer" "cognito_authorizer" {
   name = "${var.project_identifier}-cognito"
@@ -39,8 +39,9 @@ resource "aws_api_gateway_method" "post_method" {
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito_authorizer.id
   http_method   = "POST"
-  resource_id   = aws_api_gateway_resource.resource_path_wildcard[each.key].id
-  rest_api_id   = aws_api_gateway_rest_api.create_api.id
+  # resource_id   = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
+  rest_api_id = aws_api_gateway_rest_api.create_api.id
 
   request_parameters = {
     # "method.request.header.Authorization" = true
@@ -52,7 +53,7 @@ resource "aws_api_gateway_method_response" "post_200" {
   for_each = var.apps
 
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  resource_id = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
   http_method = aws_api_gateway_method.post_method[each.key].http_method
   status_code = "200"
 
@@ -65,7 +66,7 @@ resource "aws_api_gateway_integration" "post_integration" {
   for_each = var.apps
 
   http_method             = aws_api_gateway_method.post_method[each.key].http_method
-  resource_id             = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id             = aws_api_gateway_resource.resource_path_parent[each.key].id
   rest_api_id             = aws_api_gateway_rest_api.create_api.id
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
@@ -76,7 +77,7 @@ resource "aws_api_gateway_integration_response" "post_integration_response" {
   for_each = var.apps
 
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  resource_id = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
   http_method = aws_api_gateway_method.post_method[each.key].http_method
   status_code = aws_api_gateway_method_response.post_200[each.key].status_code
 
@@ -90,7 +91,7 @@ resource "aws_api_gateway_integration_response" "post_integration_response" {
 resource "aws_api_gateway_method" "options_method" {
   for_each = var.apps
 
-  resource_id   = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id   = aws_api_gateway_resource.resource_path_parent[each.key].id
   rest_api_id   = aws_api_gateway_rest_api.create_api.id
   http_method   = "OPTIONS"
   authorization = "NONE"
@@ -100,7 +101,7 @@ resource "aws_api_gateway_method_response" "options_200" {
   for_each = var.apps
 
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  resource_id = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
   http_method = aws_api_gateway_method.options_method[each.key].http_method
   status_code = "200"
 
@@ -116,7 +117,7 @@ resource "aws_api_gateway_integration" "options_integration" {
   for_each = var.apps
 
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  resource_id = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
   http_method = aws_api_gateway_method.options_method[each.key].http_method
   type        = "MOCK"
 
@@ -131,7 +132,7 @@ resource "aws_api_gateway_integration_response" "options_integration_response" {
   for_each = var.apps
 
   rest_api_id = aws_api_gateway_rest_api.create_api.id
-  resource_id = aws_api_gateway_resource.resource_path_wildcard[each.key].id
+  resource_id = aws_api_gateway_resource.resource_path_parent[each.key].id
   http_method = aws_api_gateway_method.options_method[each.key].http_method
   status_code = aws_api_gateway_method_response.options_200[each.key].status_code
 
@@ -155,7 +156,7 @@ resource "aws_lambda_permission" "apigw_lambda" {
   principal     = "apigateway.amazonaws.com"
   function_name = var.lambdas[each.key].function_name
 
-  source_arn = "${aws_api_gateway_rest_api.create_api.execution_arn}/*/${aws_api_gateway_method.post_method[each.key].http_method}${aws_api_gateway_resource.resource_path_wildcard[each.key].path}"
+  source_arn = "${aws_api_gateway_rest_api.create_api.execution_arn}/*/${aws_api_gateway_method.post_method[each.key].http_method}${aws_api_gateway_resource.resource_path_parent[each.key].path}"
 }
 
 #######################################
@@ -166,7 +167,7 @@ resource "aws_api_gateway_deployment" "define_deployment" {
 
   # triggers = {
   #   redeployment = sha1(jsonencode([
-  #     aws_api_gateway_resource.resource_path_wildcard[each.key].id,
+  #     aws_api_gateway_resource.resource_path_parent[each.key].id,
   #     aws_api_gateway_method.post_method[each.key].id,
   #     aws_api_gateway_method.options_method[each.key].id,
   #     aws_api_gateway_integration.post_integration[each.key].id,
